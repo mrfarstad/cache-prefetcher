@@ -6,6 +6,7 @@
 
 #include "interface.hh"
 #include "stdlib.h"
+#include <map>
 
 /*
  * Thoughts:
@@ -25,6 +26,8 @@
 
 #define GHB_SIZE 64
 #define AIT_SIZE 64
+#define GHB_DEPTH 5
+#define PREFETCH_PROBABILITY_THRESHOLD 0.3
 
 // Data structures
 struct ghb_entry {
@@ -32,6 +35,8 @@ struct ghb_entry {
   Addr key;
   // Previous occurence of this address
   ghb_entry* prev_occurence;
+  // Next ghb element
+  ghb_entry* next;
 };
 
 struct ait_entry {
@@ -45,12 +50,15 @@ struct ait_entry {
 
 // Function prototypes
 void initialize_ghb();
-void ghb_add_entry(Addr key);
+ghb_entry* ghb_add_entry(Addr key);
+void initialize_ait();
 ghb_entry* ait_add_entry(Addr key, ghb_entry* ghb_occurence);
+
 
 /*
  * PREFETCHER
  * */
+
 void prefetch_init(void)
 {
     /* Called before any calls to prefetch_access. */
@@ -59,23 +67,46 @@ void prefetch_init(void)
     //DPRINTF(HWPrefetch, "Initialized sequential-on-access prefetcher\n");
     
     initialize_ghb();
+    initialize_ait();
 }
 
 void prefetch_access(AccessStat stat)
 {
-    /* pf_addr is now an address within the _next_ cache block */
-    Addr pf_addr = stat.mem_addr + BLOCK_SIZE;
-
-    /*
-     * Issue a prefetch request if a demand miss occured,
-     * and the block is not already in cache.
-     */
-    if (stat.miss && !in_cache(pf_addr)) {
-        issue_prefetch(pf_addr);
+    ///* pf_addr is now an address within the _next_ cache block */
+    //Addr pf_addr = stat.mem_addr + BLOCK_SIZE;
+    //
+    ///*
+    // * Issue a prefetch request if a demand miss occured,
+    // * and the block is not already in cache.
+    // */
+    //if (stat.miss && !in_cache(pf_addr)) {
+    //    issue_prefetch(pf_addr);
+    //}
+    // Add the entry to the GHB
+    ghb_entry* entry = ghb_add_entry(stat.mem_addr);
+    // Note: unordered_map requieres C++11, which seems to ble not available
+    std::map<Addr, float> occurence_probabilities;
+    unsigned int depth = 0;
+    // Handle probabilities of next accesses after previously access of same address
+    while (entry != NULL && entry->prev_occurence != NULL && depth < GHB_DEPTH) {
+      entry = entry->prev_occurence;
+      occurence_probabilities[entry->next->key] += 1 / GHB_DEPTH;
+      depth++;
     }
 
-    // Add the entry to the GHB
-    ghb_add_entry(stat.mem_addr);
+    ///*
+    // * Issue a prefetch request if a demand miss occured,
+    // * and the block is not already in cache.
+    // */
+    if (stat.miss && !in_cache(entry->key)) {
+      // Fetch every element in map above given threshold
+      std::map<Addr, float>::iterator prob;
+      for (prob = occurence_probabilities.begin(); prob != occurence_probabilities.end(); prob++) {
+        if (prob->second > PREFETCH_PROBABILITY_THRESHOLD) {
+          issue_prefetch(prob->first);
+        }
+      }
+    }
 }
 
 void prefetch_complete(Addr addr) {
@@ -125,14 +156,14 @@ ghb_entry* ait_add_entry(Addr key, ghb_entry* ghb_occurence) {
   }
 
   // Add ait entry
-  ait_head_index = (ait_head_index + 1) % AIT_SIZE;
   entry = (ait_entry*) malloc(sizeof(ait_entry));
   *entry = (ait_entry) { .key = key, .ghb_occurence = ghb_occurence };
   if (ait_head_index == 0) {
     entry->prev = NULL;
   } else {
-    entry->prev = ait[(ait_head_index - 1 + AIT_SIZE) % AIT_SIZE];
+    entry->prev = ait[ait_head_index];
   }
+  ait_head_index = (ait_head_index + 1) % AIT_SIZE;
   ait[ait_head_index] = entry;
   return NULL;
 }
@@ -149,18 +180,22 @@ void initialize_ghb() {
   ghb = (ghb_entry**) malloc(sizeof(ghb_entry*) * (GHB_SIZE + 1)); // Extra space for sentinel
 }
 
-void ghb_add_entry(Addr key) {
-  ghb_head_index = (ghb_head_index + 1) % GHB_SIZE;
+ghb_entry* ghb_add_entry(Addr key) {
 
   ghb_entry* entry = (ghb_entry*) malloc(sizeof(ghb_entry));
   *entry = (ghb_entry) { .key = key };
 
   if (ghb_head_index >= 0) {
-    // Find last occurence in address index table
+    // Find last occurence in GHB from address index table
     entry->prev_occurence = ait_add_entry(key, entry);
+    // Make previous entry->next point to this entry
+    ghb[ghb_head_index]->next = entry;
   } else {
+    // No previous occurences if GHB is empty
     entry->prev_occurence = NULL;
   }
 
+  ghb_head_index = (ghb_head_index + 1) % GHB_SIZE;
   ghb[ghb_head_index] = entry;
+  return entry;
 }
