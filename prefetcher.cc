@@ -40,7 +40,7 @@ struct ghb_entry {
 };
 
 ghb_entry* ghb_add_entry(Addr address);
-ghb_entry* ghb_get_last_occurence();
+ghb_entry* ghb_get_prev_occurence(Addr address);
 
 ghb_entry** ghb = NULL;
 int ghb_head = -1;
@@ -67,54 +67,60 @@ void prefetch_access(AccessStat stat){
   //if (stat.miss && !in_cache(pf_addr)) {
   //    issue_prefetch(pf_addr);
   //}
-  ghb_entry* entry = ghb_add_entry(stat.mem_addr)->prev_occurence;
-  if (entry != NULL) {
-    Addr pf_addr = ghb[(entry->index + 1) % GHB_SIZE]->address;
-    if (stat.miss && !in_cache(pf_addr)) {
-        issue_prefetch(pf_addr);
-    }
-  }
+  //ghb_entry* entry = ghb_add_entry(stat.mem_addr);
+  //printf("Hello!\n");
+  //for (int i = 0; i < GHB_SIZE; i++) {
+  //  //printf("(%d, %lu)", ghb[i], ghb[i]);
+  //  if (ghb[i] != NULL) {
+  //    //printf("(%d, %lu)", ghb[i]->index, ghb[i]->address);
+  //    issue_prefetch(ghb[i]->address);
+  //  }
+  //}
+  //if (entry != NULL) {
+  //  Addr pf_addr = entry->address;
+  //  if (stat.miss && !in_cache(pf_addr)) {
+  //    issue_prefetch(pf_addr);
+  //  }
+  //}
 }
-
 
 ghb_entry* ghb_get_prev_occurence(Addr address) {
-  if (ghb_head == -1) return NULL;
-  size_t index = (ghb_head - 1 + GHB_SIZE) % GHB_SIZE;
-  while (index != ghb_head) {
-    ghb_entry* entry = ghb[index];
-    if (entry == NULL) return NULL;
-    else if (entry->address == address) return entry;
-    index = (index - 1 + GHB_SIZE) % GHB_SIZE;
-  }
+//  if (ghb_head == -1) return NULL;
+//  int index = (ghb_head - 1 + GHB_SIZE) % GHB_SIZE;
+//  while (index != ghb_head) {
+//    ghb_entry* entry = ghb[index];
+//    if (entry == NULL) return NULL;
+//    else if (entry->address == address) return entry;
+//    index = (index - 1 + GHB_SIZE) % GHB_SIZE;
+//  }
   return NULL;
 }
-
 
 ghb_entry* ghb_add_entry(Addr address) {
   // Increment ghb
   ghb_head = (ghb_head + 1) % GHB_SIZE;
 
-  // Handle existing entry
-  ghb_entry* old = ghb[ghb_head];
-  if (old != NULL) {
-    // Handle next_occurence's pointer to this struct
-    if (old->next_occurence != NULL) {
-      old->next_occurence->prev_occurence = NULL;
-    }
-    free(old);
-  }
+  //// Handle existing entry
+  //ghb_entry* old = ghb[ghb_head];
+  //if (old != NULL) {
+  //  // Reset next_occurence's pointer to this struct
+  //  if (old->next_occurence != NULL) old->next_occurence->prev_occurence = NULL;
+  //  free(old);
+  //  ghb[ghb_head] = NULL;
+  //}
 
   ghb_entry* entry = (ghb_entry *) malloc(sizeof(ghb_entry));
   entry->address = address;
   entry->index = ghb_head;
-  entry->next_occurence = NULL;
-  entry->prev_occurence = ghb_get_last_occurence(address);
-  if (entry->prev_occurence != NULL) entry->prev_occurence->next_occurence->prev_occurence = entry;
+  ////entry->next_occurence = NULL;
+  ////entry->prev_occurence = ghb_get_prev_occurence(address);
+  ////if (entry->prev_occurence != NULL) entry->prev_occurence->next_occurence = entry;
 
-  // Add entry
+  //// Add entry
   ghb[ghb_head] = entry;
 
-  return entry;
+  //return entry;
+  return NULL;
 }
 
 
