@@ -51,7 +51,8 @@ struct ait_entry {
   ghb_entry* ghb_occurence;
 };
 
-ghb_entry* ait_add_entry(Addr address, ghb_entry* new_entry);
+//ghb_entry* ait_add_entry(Addr address, ghb_entry* new_entry);
+ait_entry* ait_add_entry(Addr address);
 ghb_entry* ghb_add_entry(Addr address);
 
 ait_entry** ait = NULL;
@@ -103,7 +104,8 @@ void prefetch_access(AccessStat stat){
   //}
   //q = (q + 1) % QUEUE_SIZE;
   //queue[q] = stat.mem_addr;
-  ghb_entry* entry = ghb_add_entry(stat.mem_addr);
+  //ghb_entry* entry = ghb_add_entry(stat.mem_addr);
+  ait_entry* entry = ait_add_entry(stat.mem_addr);
   if (entry != NULL) {
     Addr pf_addr = entry->address;
     if (stat.miss && !in_cache(pf_addr)) {
@@ -121,7 +123,7 @@ ghb_entry* ghb_add_entry(Addr address) {
   ghb_entry* entry = (ghb_entry*) malloc(sizeof(ghb_entry));
   entry->address = address;
   // Call ait_add_entry to get prev ghb occurence
-  entry->prev_occurence = ait_add_entry(address, entry);
+  //entry->prev_occurence = ait_add_entry(address, entry);
 
   ghb_head = (ghb_head + 1) % GHB_SIZE;
   ghb[ghb_head] = entry;
@@ -129,28 +131,29 @@ ghb_entry* ghb_add_entry(Addr address) {
   return entry;
 }
 
-ghb_entry* ait_add_entry(Addr address, ghb_entry* new_entry) {
+//ghb_entry* ait_add_entry(Addr address, ghb_entry* new_entry) {
+ait_entry* ait_add_entry(Addr address) {
   // If ait entry exists, update ghb_occurence with new_entry
   ait_entry* entry = NULL;
-  if (ait_head >= 0) {
-    while (entry == NULL) {
-      entry = ait[ait_head];
-      if (entry->address == new_entry->address) {
-        ghb_entry* old_entry = entry->ghb_occurence;
-        entry->ghb_occurence = new_entry;
-        return old_entry;
-      } else if (entry->prev == NULL) {
-        // Exhaustive search, no entry exists
-        break;
-      }
-      entry = entry->prev;
-    }
-  }
+  //if (ait_head >= 0) {
+  //  while (entry == NULL) {
+  //    entry = ait[ait_head];
+  //    if (entry->address == new_entry->address) {
+  //      ghb_entry* old_entry = entry->ghb_occurence;
+  //      entry->ghb_occurence = new_entry;
+  //      return old_entry;
+  //    } else if (entry->prev == NULL) {
+  //      // Exhaustive search, no entry exists
+  //      break;
+  //    }
+  //    entry = entry->prev;
+  //  }
+  //}
 
   // If ait entry not exists, create one
   entry = (ait_entry*) malloc(sizeof(ait_entry));
   entry->address = address;
-  entry->ghb_occurence = new_entry;
+  //entry->ghb_occurence = new_entry;
   if (ait_head >= 0) {
     entry->prev = ait[ait_head];
   } else {
@@ -159,7 +162,8 @@ ghb_entry* ait_add_entry(Addr address, ghb_entry* new_entry) {
   ait_head = (ait_head + 1) % AIT_SIZE;
   ait[ait_head] = entry;
   // Return prev ghb occurence
-  return NULL;
+  //return NULL;
+  return entry->prev;
 }
 
 void prefetch_complete(Addr addr) {
