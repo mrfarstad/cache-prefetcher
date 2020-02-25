@@ -31,8 +31,8 @@
 
 //#define QUEUE_SIZE 10
 #define AIT_SIZE 512
-#define GHB_SIZE 512
-#define GHB_DEPTH 5
+#define GHB_SIZE 8
+#define GHB_DEPTH 1
 //
 //void ghb_add_entry(Addr* address);
 
@@ -44,23 +44,23 @@
 struct ghb_entry {
   Addr address;
   ghb_entry* prev_occurence;
-  ghb_entry* prev; // TODO: remove this
-  ghb_entry* next;
+  ghb_entry* next_occurence;
+  int index;
 };
 
 struct ait_entry {
   Addr address;
-  ait_entry* prev;
   ghb_entry* ghb_occurence;
+  int index;
 };
 
 //ghb_entry* ait_add_entry(Addr address, ghb_entry* new_entry);
-ait_entry* ait_add_entry(Addr address);
+//ait_entry* ait_add_entry(Addr address);
 ghb_entry* ghb_add_entry(Addr address);
-ghb_entry* ghb_get_last_occurence(ghb_entry* entry);
+ghb_entry* ghb_get_last_occurence();
 
-ait_entry** ait = NULL;
-int ait_head = -1;
+//ait_entry** ait = NULL;
+//int ait_head = -1;
 
 ghb_entry** ghb = NULL;
 int ghb_head = -1;
@@ -74,8 +74,14 @@ void prefetch_init(void)
     
     //initialize_ghb();
     //queue = (Addr* ) malloc(sizeof(Addr) * );
-    ait = (ait_entry**) malloc(sizeof(ait_entry*) * AIT_SIZE);
+    //ait = (ait_entry**) malloc(sizeof(ait_entry*) * AIT_SIZE);
+    //for (unsigned int i = 0; i < AIT_SIZE; i++) {
+    //  ait[i] = NULL;
+    //}
     ghb = (ghb_entry**) malloc(sizeof(ghb_entry*) * GHB_SIZE);
+    for (unsigned int i = 0; i < GHB_SIZE; i++) {
+      ghb[i] = NULL;
+    }
 }
 
 //ghb_entry* ghb_add_entry(Addr address) {
@@ -88,7 +94,7 @@ void prefetch_init(void)
 //  return entry->prev;
 //}
 
-unsigned int depth = 0;
+int depth = 0;
 
 void prefetch_access(AccessStat stat){
   //Addr pf_addr = stat.mem_addr + BLOCK_SIZE;
@@ -110,55 +116,120 @@ void prefetch_access(AccessStat stat){
   //}
   //q = (q + 1) % QUEUE_SIZE;
   //queue[q] = stat.mem_addr;
-  //ghb_entry* entry = ghb_add_entry(stat.mem_addr);
   ghb_entry* entry = ghb_add_entry(stat.mem_addr);
-  if (entry != NULL) {
-    ghb_entry* prev_occurence = entry->prev_occurence;
-    while (prev_occurence != NULL && depth < GHB_DEPTH) {
-      Addr pf_addr = prev_occurence->next->address;
-      //if (stat.miss && !in_cache(pf_addr)) {
-          issue_prefetch(pf_addr);
-      //}
-      prev_occurence = prev_occurence->prev_occurence;
-      depth++;
+  //ghb_entry* prev_occurence = ghb_add_entry(stat.mem_addr)->prev_occurence;
+
+  for (int i = 0; i < GHB_SIZE; i++) {
+    if (ghb[i] != NULL) {
+      printf("all good: %lu\n", ghb[i]->address);
+      issue_prefetch(ghb[i]->address);
     }
-    depth = 0;
+      
   }
+    //issue_prefetch(ghb[prev_occurence->index]->address);
+  /*
+   * Debugging stategy
+   *
+   * Go through all previous occurences
+   * If any of them have an index that is not in the GHB -> Error!
+   * */
+      //if (ghb[i] != NULL) issue_prefetch(ghb[i]->address);
+ // while (prev_occurence != NULL && depth < GHB_DEPTH) {
+ //   // Get address of next element after previous occurence
+ //   //Addr pf_addr = ghb[(prev_occurence->index + 1) % GHB_SIZE]->address;
+ //   //bool test = false;
+ //   //for (int i = 0; i < GHB_SIZE; i++) {
+ //   //  if (ghb[(prev_occurence->index + 1) % GHB_SIZE] == ghb[i]) test = true;
+ //   //} 
+ //   //if (!test) fprintf(stderr,"SHOULD NOT HAPPEN!\n");
+ //   //printf("prev_occurence: (%d,%lu)\n", prev_occurence->index, ghb[prev_occurence->index]->address);
+ //   //if (ghb[prev_occurence->index] != NULL) issue_prefetch(ghb[prev_occurence->index]->address);
+ //   //for (int i = 0; i < GHB_SIZE; i++) {
+ //   //  if (ghb[i] != NULL) {
+ //   //    printf("all good: %lu\n", ghb[i]->address);
+ //   //  }
+ //   //}
+ //   //if (stat.miss && !in_cache(pf_addr)) {
+ //   //issue_prefetch(pf_addr);
+ //   //}
+ //   //bool test = true;
+ //   //for (int i = 0; i < GHB_SIZE; i++) {
+ //   //  if (ghb[prev_occurence->index] == ghb[i]) test = false;
+ //   //  //if (ghb[i] != NULL) {
+ //   //  //  if (ghb[prev_occurence->index]->address == ghb[i]->address) test = true;
+ //   //  //}
+ //   //} 
+ //   ////if (prev_occurence->index < 0 || prev_occurence->index > GHB_SIZE - 1) test = true;
+ //   //if (test) fprintf(stderr,"SHOULD NOT HAPPEN!\n");
+ //   //printf("all good: %lu\n", ghb[prev_occurence->index]->address);
+ //   ///*
+ //   // * Kan problemet være at du prøver å fetche minne som har blitt freet av applikasjonen?
+ //   // * */
+ //   for (int i = 0; i < GHB_SIZE; i++) {
+ //     if (ghb[i] != NULL) issue_prefetch(ghb[i]->address);
+ //   }
+ //   //issue_prefetch(ghb[prev_occurence->index]->address);
+ //   prev_occurence = prev_occurence->prev_occurence;
+ //   depth++;
+ // }
+ // depth = 0;
   //ghb_entry* prev = ghb_add_entry(stat.mem_addr);
   //if (prev != NULL) {// && stat.miss && !in_cache(prev->address)) {
   //    issue_prefetch(prev->address);
   //}
 
 }
-ghb_entry* ghb_get_last_occurence(ghb_entry* entry) {
-  ghb_entry* next = entry->prev;
-  while (next != NULL) {
-    if (next->address == entry->address) {
-      return next;
-    }
-    next = next->prev;
+
+unsigned int decremented_index(unsigned int index) {
+    return (index - 1 + GHB_SIZE) % GHB_SIZE;
+}
+
+ghb_entry* ghb_get_last_occurence(Addr address) {
+  size_t index = decremented_index(ghb_head);
+  while (index != ghb_head) {
+    ghb_entry* entry = ghb[index];
+    if (entry == NULL) return NULL;
+    else if (entry->address == address) return entry;
+    index = decremented_index(index);
   }
   return NULL;
 }
 
 ghb_entry* ghb_add_entry(Addr address) {
+  // Increment ghb head
+  ghb_head = (ghb_head + 1) % GHB_SIZE;
+
+  // Remove old entry if exists
+  ghb_entry* head = ghb[ghb_head];
+  if (head != NULL) {
+    if (head->next_occurence != NULL) {
+      head->next_occurence->prev_occurence = NULL;
+    }
+    free(head);
+  }
+  ghb[ghb_head] = NULL;
+
+  // Create new entry
   ghb_entry* entry = (ghb_entry*) malloc(sizeof(ghb_entry));
   entry->address = address;
-  entry->next = NULL;
-  // Call ait_add_entry to get prev ghb occurence
-  //entry->prev_occurence = ait_add_entry(address, entry);
-  if (ghb_head >= 0) {
-    entry->prev = ghb[ghb_head];
-    entry->prev->next = entry;
-    entry->prev_occurence = ghb_get_last_occurence(entry->prev);
+  entry->index = ghb_head;
+  entry->next_occurence = NULL;
+
+  // Find previous occurence of address in ghb
+  if (ghb_head > 0) {
+    ghb_entry* prev_occurence = ghb_get_last_occurence(address);
+    entry->prev_occurence = prev_occurence;
+    if (prev_occurence != NULL) {
+      // Link the relationship both ways to handle memory deallocation properly later
+      prev_occurence->next_occurence = entry;
+    }
   } else {
-    entry->prev = NULL;
     entry->prev_occurence = NULL;
   }
 
-  ghb_head = (ghb_head + 1) % GHB_SIZE;
+  // Add the new entry
   ghb[ghb_head] = entry;
-  //if (entry->prev_occurence != NULL) return entry->prev_occurence->next;
+
   // Return new ghb entry
   return entry;
 }
