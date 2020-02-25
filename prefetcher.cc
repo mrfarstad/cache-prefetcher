@@ -67,11 +67,26 @@ void prefetch_access(AccessStat stat){
   //if (stat.miss && !in_cache(pf_addr)) {
   //    issue_prefetch(pf_addr);
   //}
-  ghb_entry* entry = ghb_add_entry(stat.mem_addr);
-  Addr pf_addr = entry->address;
-  if (stat.miss && !in_cache(pf_addr)) {
-      issue_prefetch(pf_addr);
+  ghb_entry* entry = ghb_add_entry(stat.mem_addr)->prev_occurence;
+  if (entry != NULL) {
+    Addr pf_addr = ghb[(entry->index + 1) % GHB_SIZE]->address;
+    if (stat.miss && !in_cache(pf_addr)) {
+        issue_prefetch(pf_addr);
+    }
   }
+}
+
+
+ghb_entry* ghb_get_prev_occurence(Addr address) {
+  if (ghb_head == -1) return NULL;
+  size_t index = (ghb_head - 1 + GHB_SIZE) % GHB_SIZE;
+  while (index != ghb_head) {
+    ghb_entry* entry = ghb[index];
+    if (entry == NULL) return NULL;
+    else if (entry->address == address) return entry;
+    index = (index - 1 + GHB_SIZE) % GHB_SIZE;
+  }
+  return NULL;
 }
 
 
@@ -79,19 +94,22 @@ ghb_entry* ghb_add_entry(Addr address) {
   // Increment ghb
   ghb_head = (ghb_head + 1) % GHB_SIZE;
 
-  // TODO: Handle existing entry
+  // Handle existing entry
   ghb_entry* old = ghb[ghb_head];
   if (old != NULL) {
-    // TODO: Handle next_occurence's pointer to this struct
+    // Handle next_occurence's pointer to this struct
+    if (old->next_occurence != NULL) {
+      old->next_occurence->prev_occurence = NULL;
+    }
     free(old);
   }
 
   ghb_entry* entry = (ghb_entry *) malloc(sizeof(ghb_entry));
   entry->address = address;
-  entry->next_occurence = NULL;
-  // TODO: Handle
-  entry->prev_occurence = NULL;
   entry->index = ghb_head;
+  entry->next_occurence = NULL;
+  entry->prev_occurence = ghb_get_last_occurence(address);
+  if (entry->prev_occurence != NULL) entry->prev_occurence->next_occurence->prev_occurence = entry;
 
   // Add entry
   ghb[ghb_head] = entry;
