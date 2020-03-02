@@ -7,6 +7,8 @@
 #include "interface.hh"
 #include "stdlib.h"
 #include "stdio.h"
+#include <map>
+#include <algorithm>
 
 /*
  * Thoughts:
@@ -28,8 +30,8 @@
  * PREFETCHER
  * */
 
-#define GHB_SIZE 512
-#define GHB_DEPTH 2
+#define GHB_SIZE 4096
+#define GHB_DEPTH 10
 
 struct ghb_entry {
   Addr address;
@@ -95,17 +97,34 @@ void ghb_add_entry(Addr address) {
   }
 }
 
+
 void prefetch_access(AccessStat stat) {
   ghb_add_entry(stat.mem_addr);
   int prev = ghb[ghb_head].prev;
   int next;
+  std::map<Addr, int> m;
   while (prev != -1 && depth < GHB_DEPTH) {
     next = (prev + 1) % GHB_SIZE;
-    if (!in_cache(ghb[next].address)) issue_prefetch(ghb[next].address);
+    // TODO: Add next candidate to map
+    m[ghb[next].address]++;
     prev = ghb[prev].prev;
     depth++;
   }
   depth = 0;
+
+  Addr candidate = 0;
+  int current_max = 0;
+  std::map<Addr, int>::iterator it;
+  for(it = m.begin(); it != m.end(); ++it ) {
+      if (it->second > current_max) {
+          candidate = it->first;
+      }
+  }
+
+  // TODO: Issue prefetch based on previous occurrence probabilities
+  if (!in_cache(candidate)) issue_prefetch(candidate);
+  else issue_prefetch(stat.mem_addr + BLOCK_SIZE);
+  //printf("%d\n", candidate);
 }
 
 void prefetch_complete(Addr addr) {
