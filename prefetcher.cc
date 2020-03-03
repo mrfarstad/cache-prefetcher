@@ -7,8 +7,9 @@
 #include "interface.hh"
 #include "stdlib.h"
 #include "stdio.h"
-#include <map>
-#include <algorithm>
+//#include <map>
+//#include <algorithm>
+#include <queue>
 
 /*
  * Thoughts:
@@ -29,11 +30,12 @@
 /*
  * PREFETCHER
  * */
+using namespace std;
 
 #define GHB_SIZE 4096 // uint16_t
 #define AIT_SIZE 2048 // uint16_t
-// This size cannot be dynamic, because hardware=)
-#define MARKOV_SIZE 20 // uint8_t
+#define MARKOV_SIZE 10 // uint8_t
+#define DEPTH 5
 
 struct ghb_entry {
   Addr address;
@@ -54,7 +56,7 @@ struct ait_entry {
 struct markov_entry {
   Addr address;
   bool valid;
-  int8_t count;
+  uint8_t count;
 };
 
 void ghb_add_entry(Addr address);
@@ -69,11 +71,19 @@ uint16_t ait_head = 0;
 markov_entry* markov = NULL;
 uint8_t markov_head = 0;
 
+class markovComparator {
+  public:
+    int operator() (const markov_entry* e1, const markov_entry* e2) {
+      return e1->count > e2->count;
+    }
+};
+
+priority_queue <markov_entry*, vector<markov_entry*>, markovComparator> pq;
+
 void prefetch_init(void) {
     /* Called before any calls to prefetch_access. */
     /* This is the place to initialize data structures. */
-
-    //DPRINTF(HWPrefetch, "Initialized sequential-on-access prefetcher\n");
+    // TODO: Find a proper way to free this memory after the simulation is complete
     ghb = (ghb_entry*) malloc(sizeof(ghb_entry) * GHB_SIZE);
     ait = (ait_entry*) malloc(sizeof(ait_entry) * AIT_SIZE);
     for (uint16_t i = 0; i < GHB_SIZE; i++) {
@@ -82,7 +92,7 @@ void prefetch_init(void) {
     for (uint16_t i = 0; i < AIT_SIZE; i++) {
       ait[i].valid = false;
     }
-    markov = (markov_entry *) malloc(sizeof(markov_entry) * MARKOV_SIZE);
+    markov = (markov_entry*) malloc(sizeof(markov_entry) * MARKOV_SIZE);
 }
 
 int16_t ghb_get_prev_occurence(Addr address) {
@@ -168,20 +178,45 @@ void prefetch_access(AccessStat stat) {
     }
     prev = ghb[prev].prev;
   }
+  markov_head = 0;
 
-  uint8_t count = 0;
+  /*
+   * This is for prefetch degree = 1
+   * */
+  //uint8_t i;
+  //uint8_t count = 0;
+  //for (i = 0; i < MARKOV_SIZE; i++) {
+  //  if (!markov[i].valid) break;
+  //  else if (markov[i].count > count) {
+  //    candidate = markov[i].address;
+  //    count = markov[i].count;
+  //  }
+  //}
+  //if (!in_cache(candidate) && !in_mshr_queue(candidate)) {
+  //  issue_prefetch(candidate);
+  //}
+
+  // Heap of best candidates
   for (uint8_t i = 0; i < MARKOV_SIZE; i++) {
     if (!markov[i].valid) break;
-    else if (markov[i].count > count) {
-      candidate = markov[i].address;
-      count = markov[i].count;
+    if (pq.size() < DEPTH) {
+      pq.push(&markov[i]);
+    } else if (pq.top()->count < markov[i].count) {
+      pq.pop();
+      pq.push(&markov[i]);
     }
   }
-  markov_head = 0;
-  
-  if (!in_cache(candidate) && !in_mshr_queue(candidate)) {
-    issue_prefetch(candidate);
+
+  // Fetch best candidates
+  for (uint8_t i = 0; i < DEPTH; i++) {
+    if (!markov[i].valid) break;
+    Addr candidate = pq.top()->address;
+    if (!in_cache(candidate)) {// && !in_mshr_queue(candidate)) {
+      issue_prefetch(candidate);
+    }
+    pq.pop();
   }
+
 }
 
 void prefetch_complete(Addr addr) {
