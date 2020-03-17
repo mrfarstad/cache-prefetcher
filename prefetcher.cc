@@ -13,8 +13,8 @@
  * PREFETCHER
  * */
 
-#define GHB_SIZE 1024 // uint16_t
-#define AIT_SIZE 1100 // uint16_t
+#define GHB_SIZE 512 // uint16_t
+#define AIT_SIZE 256 // uint16_t
 #define DEPTH 5
 
 struct ghb_entry {
@@ -27,10 +27,10 @@ struct ghb_entry {
 };
 
 struct ait_entry {
-  Addr address;
+  int32_t delta;
   bool valid;
   // Index of last GHB entry
-  int16_t entry;
+  uint16_t entry;
 };
 
 void ghb_add_entry(Addr address);
@@ -59,10 +59,12 @@ void prefetch_init(void) {
 int16_t ghb_get_prev_occurence(Addr address) {
   // TODO: Implement hash function
   // Search for previous entry
+  if (!ghb[ghb_head].valid) return -1;
+  int16_t delta = ghb[ghb_head].address - address;
   int16_t entry;
   for (uint16_t i = 0; i < AIT_SIZE; i++) {
     if (!ait[i].valid) break;
-    else if (ait[i].address == address) {
+    else if (ait[i].delta == delta) {
       // Handle found entry
       entry = ait[i].entry;
       ait[i].entry = ghb_head;
@@ -72,7 +74,7 @@ int16_t ghb_get_prev_occurence(Addr address) {
   // If entry not found, add it to the table
   
   // Increment head pointer
-  ait[ait_head].address = address;
+  ait[ait_head].delta = delta;
   ait[ait_head].entry = ghb_head;
   ait[ait_head].valid = true;
   ait_head = (ait_head + 1) % AIT_SIZE;
@@ -86,13 +88,13 @@ void ghb_add_entry(Addr address) {
     ghb[entry->next].prev = -1;
   }
 
+  // Find previous occurence
+  entry->prev = ghb_get_prev_occurence(address);
+
   // Add new entry
   entry->address = address;
   entry->valid = true;
   entry->next = -1;
-
-  // Find previous occurence
-  entry->prev = ghb_get_prev_occurence(address);
 
   // Handle previous occurrence
   if (entry->prev != -1) {
@@ -122,8 +124,8 @@ void prefetch_access(AccessStat stat) {
     }
     int16_t candidate = ghb[ghb_head].prev;
     while (candidate != -1 && depth < DEPTH) {
-      addr = ghb[(candidate + 1) % GHB_SIZE].address;
-      if (!in_cache(addr) && !in_mshr_queue(addr)) {
+      addr = stat.mem_addr + (ghb[candidate].address - ghb[(candidate + 1) % GHB_SIZE].address);
+      if (addr > 0 && addr < MAX_PHYS_MEM_ADDR && !in_cache(addr) && !in_mshr_queue(addr)) {
         issue_prefetch(addr);
         depth++;
       }
