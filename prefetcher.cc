@@ -13,9 +13,9 @@
  * PREFETCHER
  * */
 
-#define GHB_SIZE 1024 // uint16_t
-#define AIT_SIZE 512 // uint16_t
-#define DEPTH 3
+#define GHB_SIZE 512 // uint16_t
+#define AIT_SIZE 256 // uint16_t
+#define DEPTH 50
 
 struct ghb_entry {
   Addr address;
@@ -37,7 +37,7 @@ void ghb_add_entry(Addr address);
 int16_t ghb_get_prev_occurence(Addr address);
 
 ghb_entry* ghb = NULL;
-uint16_t ghb_head = 0;
+int16_t ghb_head = -1;
 
 ait_entry* ait = NULL;
 uint16_t ait_head = 0;
@@ -64,6 +64,7 @@ int16_t ghb_get_prev_occurence(int64_t index) {
     if (!ait[i].valid) break; 
     else if (!ghb[ait[i].entry].valid) continue;
     else if (ait[i].index == index) {
+      // DEBUGGING
       //if (ait[i].entry == ghb_head) {
       //  printf("the prev is equal to the current!\n");
       //}
@@ -84,24 +85,26 @@ int16_t ghb_get_prev_occurence(int64_t index) {
 }
 
 void ghb_add_entry(Addr address) {
-  // Increment head pointer
-  ghb_head = (ghb_head + 1) % GHB_SIZE;
-
+  int16_t tmp_head = (ghb_head + 1) % GHB_SIZE;
   // Handle existing entry
-  ghb_entry* entry = &ghb[ghb_head];
+  ghb_entry* entry = &ghb[tmp_head];
   if (entry->valid) {
-    entry->valid = false;
     if (entry->next != -1) {
       ghb[entry->next].prev = -1;
     }
+    entry->valid = false;
   }
 
-  // Find previous occurence
-  int64_t delta = ghb[ghb_head].address - address;
-  if (!delta) entry->prev = -1;
-  else entry->prev = ghb_get_prev_occurence(delta);
+  if (ghb_head != -1 && ghb[ghb_head].valid) {
+    int64_t delta = ghb[ghb_head].address - address;
+    entry->prev = ghb_get_prev_occurence(delta);
+  } else {
+    // Handle initial entry before a delta can be calculated
+    entry->prev = -1;
+  }
 
-  //if (ghb_head == entry->prev) {
+  //// DEBUGGING
+  //if (tmp_head == entry->prev) {
   //  printf("bad returned prev!\n");
   //}
 
@@ -114,6 +117,9 @@ void ghb_add_entry(Addr address) {
   if (entry->prev != -1) {
     ghb[entry->prev].next = ghb_head;
   }
+
+  // Increment head pointer
+  ghb_head = tmp_head;
 }
 
 void prefetch_access(AccessStat stat) {
@@ -131,7 +137,7 @@ void prefetch_access(AccessStat stat) {
      clear_prefetch_bit(stat.mem_addr);
      return;
     }
-    int16_t prev = ghb[ghb_head].prev;
+    int16_t prev = ghb[(ghb_head - 1 + GHB_SIZE) % GHB_SIZE].prev;
     while (prev != -1 && depth < DEPTH) {
       int16_t candidate = (prev + 1) % GHB_SIZE;
       addr = stat.mem_addr + (ghb[prev].address - ghb[candidate].address);
