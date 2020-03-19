@@ -14,8 +14,9 @@
  * */
 
 #define GHB_SIZE 1024 // uint16_t
-#define AIT_SIZE 1100 // uint16_t
-#define DEPTH 5
+#define AIT_SIZE 512 // uint16_t
+#define DEPTH 2
+#define WIDTH 5
 
 struct ghb_entry {
   Addr address;
@@ -27,14 +28,15 @@ struct ghb_entry {
 };
 
 struct ait_entry {
-  Addr address;
+  uint64_t delta;
+  bool sign;
   bool valid;
   // Index of last GHB entry
   int16_t entry;
 };
 
 void ghb_add_entry(Addr address);
-int16_t ghb_get_prev_occurence(Addr address);
+int16_t ghb_get_prev_occurence(uint64_t address, bool sign);
 
 ghb_entry* ghb = NULL;
 int16_t ghb_head = -1;
@@ -56,13 +58,13 @@ void prefetch_init(void) {
     }
 }
 
-int16_t ghb_get_prev_occurence(Addr address) {
+int16_t ghb_get_prev_occurence(uint64_t delta, bool sign) {
   // TODO: Implement hash function
   // Search for previous entry
   int16_t entry;
   for (uint16_t i = 0; i < AIT_SIZE; i++) {
     if (!ait[i].valid) break;
-    else if (ait[i].address == address) {
+    else if (ait[i].delta == delta && ait[i].sign == sign) {
       // Handle found entry
       entry = ait[i].entry;
       if (!ghb[entry].valid) entry = -1;
@@ -73,7 +75,8 @@ int16_t ghb_get_prev_occurence(Addr address) {
   // If entry not found, add it to the table
 
   // Increment head pointer
-  ait[ait_head].address = address;
+  ait[ait_head].delta = delta;
+  ait[ait_head].sign = sign;
   ait[ait_head].entry = ghb_head;
   ait[ait_head].valid = true;
   ait_head = (ait_head + 1) % AIT_SIZE;
@@ -81,6 +84,7 @@ int16_t ghb_get_prev_occurence(Addr address) {
 }
 
 void ghb_add_entry(Addr address) {
+  int16_t prev_head = ghb_head;
   // Increment head pointer
   ghb_head = (ghb_head + 1) % GHB_SIZE;
 
@@ -93,8 +97,23 @@ void ghb_add_entry(Addr address) {
     }
   }
 
-  // Find previous occurence
-  entry->prev = ghb_get_prev_occurence(address);
+  if (prev_head != -1) {
+    // Find previous occurence
+    bool sign;
+    uint64_t delta;
+    Addr prev_addr = ghb[prev_head].address;
+    if (prev_addr > address) {
+      delta = prev_addr - address;
+      sign = 0;
+    } else {
+      delta = address - prev_addr;
+      sign = 1;
+    }
+    entry->prev = ghb_get_prev_occurence(delta, sign);
+  } else {
+    // Handle first access to ghb
+    entry->prev = -1;
+  }
 
   // Add new entry
   entry->address = address;
@@ -107,30 +126,45 @@ void ghb_add_entry(Addr address) {
   }
 }
 
+//uint64_t misses = 0;
+//uint64_t test = 0;
+
+
 void prefetch_access(AccessStat stat) {
   /*
    * Traverse the linked list of previous occurences for the current candidate and fetch
    * prefetch candidates up to the prefetch depth
    * */
-
-  bool prefetched = get_prefetch_bit(stat.mem_addr);
+  //printf("misses: %lu\n", misses++);
+  //bool prefetched = get_prefetch_bit(stat.mem_addr);
   if (stat.miss || prefetched) {
+    bool initial = false;
+    if (ghb_head == -1) initial = true;
     ghb_add_entry(stat.mem_addr);
+    if (initial) return;
     if (prefetched) {
      clear_prefetch_bit(stat.mem_addr);
      return;
     }
     Addr addr;
     int8_t depth = 0;
+    int8_t width = 0;
     int16_t prev = ghb[ghb_head].prev;
-    while (prev != -1 && depth < DEPTH) {
+    //printf("prev: %d, candidates: ", prev);
+    while (prev != -1 && depth < DEPTH && width < WIDTH) {
       addr = ghb[(prev + 1) % GHB_SIZE].address;
+      //printf("%d ", (prev + 1) % GHB_SIZE);
       if (!in_cache(addr) && !in_mshr_queue(addr)) {
         issue_prefetch(addr);
         depth++;
       }
+      //if (test++ == 100) {
+      //  printf("something fishy");
+      //}
+      width++;
       prev = ghb[prev].prev;
     }
+    //printf("prev: %d\n", prev);
   }
 }
 
