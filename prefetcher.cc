@@ -37,7 +37,7 @@ void ghb_add_entry(Addr address);
 int16_t ghb_get_prev_occurence(Addr address);
 
 ghb_entry* ghb = NULL;
-uint16_t ghb_head = 0;
+int16_t ghb_head = -1;
 
 ait_entry* ait = NULL;
 uint16_t ait_head = 0;
@@ -65,12 +65,13 @@ int16_t ghb_get_prev_occurence(Addr address) {
     else if (ait[i].address == address) {
       // Handle found entry
       entry = ait[i].entry;
+      if (!ghb[entry].valid) entry = -1;
       ait[i].entry = ghb_head;
       return entry;
     }
   }
   // If entry not found, add it to the table
-  
+
   // Increment head pointer
   ait[ait_head].address = address;
   ait[ait_head].entry = ghb_head;
@@ -80,30 +81,31 @@ int16_t ghb_get_prev_occurence(Addr address) {
 }
 
 void ghb_add_entry(Addr address) {
+  // Increment head pointer
+  ghb_head = (ghb_head + 1) % GHB_SIZE;
+
   // Handle existing entry
   ghb_entry* entry = &ghb[ghb_head];
-  if (entry->valid && entry->next != -1) {
-    ghb[entry->next].prev = -1;
+  if (entry->valid) {
+    entry->valid = false;
+    if (entry->next != -1) {
+      ghb[entry->next].prev = -1;
+    }
   }
+
+  // Find previous occurence
+  entry->prev = ghb_get_prev_occurence(address);
 
   // Add new entry
   entry->address = address;
   entry->valid = true;
   entry->next = -1;
 
-  // Find previous occurence
-  entry->prev = ghb_get_prev_occurence(address);
-
   // Handle previous occurrence
   if (entry->prev != -1) {
     ghb[entry->prev].next = ghb_head;
   }
-
-  // Increment head pointer
-  ghb_head = (ghb_head + 1) % GHB_SIZE;
 }
-
-int misses = 0; 
 
 void prefetch_access(AccessStat stat) {
   /*
@@ -113,21 +115,21 @@ void prefetch_access(AccessStat stat) {
 
   bool prefetched = get_prefetch_bit(stat.mem_addr);
   if (stat.miss || prefetched) {
-    Addr addr;
-    int8_t depth = 0;
     ghb_add_entry(stat.mem_addr);
     if (prefetched) {
      clear_prefetch_bit(stat.mem_addr);
      return;
     }
-    int16_t candidate = ghb[ghb_head].prev;
-    while (candidate != -1 && depth < DEPTH) {
-      addr = ghb[(candidate + 1) % GHB_SIZE].address;
+    Addr addr;
+    int8_t depth = 0;
+    int16_t prev = ghb[ghb_head].prev;
+    while (prev != -1 && depth < DEPTH) {
+      addr = ghb[(prev + 1) % GHB_SIZE].address;
       if (!in_cache(addr) && !in_mshr_queue(addr)) {
         issue_prefetch(addr);
         depth++;
       }
-      candidate = ghb[candidate].prev;
+      prev = ghb[prev].prev;
     }
   }
 }
