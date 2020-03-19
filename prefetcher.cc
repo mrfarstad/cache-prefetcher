@@ -15,7 +15,7 @@
 
 #define GHB_SIZE 512 // uint16_t
 #define AIT_SIZE 256 // uint16_t
-#define DEPTH 50
+#define DEPTH 200
 
 struct ghb_entry {
   Addr address;
@@ -27,14 +27,15 @@ struct ghb_entry {
 };
 
 struct ait_entry {
-  int64_t index;
+  uint64_t index;
+  bool sign;
   bool valid;
   // Index of last GHB entry
   int16_t entry;
 };
 
 void ghb_add_entry(Addr address);
-int16_t ghb_get_prev_occurence(Addr address);
+int16_t ghb_get_prev_occurence(uint64_t delta, bool sign);
 
 ghb_entry* ghb = NULL;
 int16_t ghb_head = -1;
@@ -56,14 +57,14 @@ void prefetch_init(void) {
     }
 }
 
-int16_t ghb_get_prev_occurence(int64_t index) {
+int16_t ghb_get_prev_occurence(uint64_t index, bool sign) {
   // TODO: Implement hash function
   // Search for previous entry
   int16_t entry;
   for (uint16_t i = 0; i < AIT_SIZE; i++) {
     if (!ait[i].valid) break; 
     else if (!ghb[ait[i].entry].valid) continue;
-    else if (ait[i].index == index) {
+    else if (ait[i].index == index && ait[i].sign == sign) {
       // DEBUGGING
       //if (ait[i].entry == ghb_head) {
       //  printf("the prev is equal to the current!\n");
@@ -78,6 +79,7 @@ int16_t ghb_get_prev_occurence(int64_t index) {
   
   // Increment head pointer
   ait[ait_head].index = index;
+  ait[ait_head].sign = sign;
   ait[ait_head].entry = ghb_head;
   ait[ait_head].valid = true;
   ait_head = (ait_head + 1) % AIT_SIZE;
@@ -95,18 +97,31 @@ void ghb_add_entry(Addr address) {
     entry->valid = false;
   }
 
-  if (ghb_head != -1 && ghb[ghb_head].valid) {
-    int64_t delta = ghb[ghb_head].address - address;
-    entry->prev = ghb_get_prev_occurence(delta);
-  } else {
+  if (ghb_head != -1) { // && ghb[ghb_head].valid) {
+    uint64_t delta;
+    uint16_t tmp_addr = ghb[ghb_head].address;
+    bool sign;
+    if (tmp_addr > address) {
+      delta = tmp_addr - address;
+      sign = 0;
+    } else {
+      delta = address - tmp_addr;
+      sign = 1;
+    }
+
+    //printf("%lld\n", delta);
+    entry->prev = ghb_get_prev_occurence(delta, sign);
+    //entry->prev = -1;
+  }
+  else {
     // Handle initial entry before a delta can be calculated
     entry->prev = -1;
   }
 
-  //// DEBUGGING
-  //if (tmp_head == entry->prev) {
-  //  printf("bad returned prev!\n");
-  //}
+  // DEBUGGING
+  if (tmp_head == entry->prev) {
+    printf("bad returned prev!\n");
+  }
 
   // Add new entry
   entry->address = address;
@@ -130,22 +145,60 @@ void prefetch_access(AccessStat stat) {
 
   bool prefetched = get_prefetch_bit(stat.mem_addr);
   if (stat.miss || prefetched) {
-    Addr addr;
     int8_t depth = 0;
+    bool initial = false;
+    if (ghb_head == -1) initial = true; 
     ghb_add_entry(stat.mem_addr);
+    
+    if (initial) return;
     if (prefetched) {
      clear_prefetch_bit(stat.mem_addr);
      return;
     }
+    // ghb_head incremented after ghb_add_entry, we want to check prev of last added
     int16_t prev = ghb[(ghb_head - 1 + GHB_SIZE) % GHB_SIZE].prev;
+    // TODO: First prev = 0, FIX!
+    printf("prev: %d, candidates: ", prev);
     while (prev != -1 && depth < DEPTH) {
       int16_t candidate = (prev + 1) % GHB_SIZE;
-      addr = stat.mem_addr + (ghb[prev].address - ghb[candidate].address);
-      if (!in_cache(addr) && !in_mshr_queue(addr)) {
-        issue_prefetch(addr);
-        depth++;
+      printf("%d, ", candidate);
+      uint64_t delta;
+      Addr prev_addr = ghb[prev].address;
+      Addr adj_addr = ghb[candidate].address;
+      bool sign;
+      if (prev_addr > adj_addr) {
+        delta = prev_addr - adj_addr;
+        sign = 0;
+      } else {
+        delta = adj_addr - prev_addr;
+        sign = 1;
       }
+
+      Addr addr;
+      // If no underflow
+      if (!sign && delta < stat.mem_addr) {
+         addr = stat.mem_addr - delta;
+         if (!in_cache(addr) && !in_mshr_queue(addr)) {
+            issue_prefetch(addr);
+         }
+      }
+      // If no overflow
+      else if (sign && stat.mem_addr + delta < MAX_PHYS_MEM_ADDR) {
+         addr = stat.mem_addr + delta;
+         if (!in_cache(addr) && !in_mshr_queue(addr)) {
+            issue_prefetch(addr);
+         }
+      }
+
+      //depth++;
+      //if (depth == 199) {
+      //  printf("something fishy\n");
+      //}
       prev = ghb[prev].prev;
+    }
+    printf("prev: %d\n", prev);
+    if (prev != -1) {
+      printf("prev should be -1 but was: %d\n", prev);
     }
   }
 }
