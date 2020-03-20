@@ -18,6 +18,7 @@
 
 
 void ghb_add_entry(Addr addr);
+int16_t ait_get_prev_ghb_entry(Addr addr);
 int16_t ghb_get_prev_entry(Addr addr);
 
 struct ghb_entry {
@@ -51,6 +52,17 @@ void prefetch_init(void) {
 }
 
 int16_t ghb_get_prev_entry(Addr addr) {
+  int16_t prev = -1;
+  int16_t index = (ghb_head + 1) % GHB_SIZE;
+  while (index != ghb_head) {
+    if (!ghb[index].valid) return -1;
+    else if (ghb[index].addr == addr) return index;
+    index = (index + 1) % GHB_SIZE;
+  }
+  return prev;
+}
+
+int16_t ait_get_prev_ghb_entry(Addr addr) {
   // TODO: Implement hash function
   // Search for previous entry
   int16_t entry;
@@ -64,7 +76,9 @@ int16_t ghb_get_prev_entry(Addr addr) {
       return entry;
     }
   }
-  // If entry not found, add it to the table
+
+  //// If entry not found in ait, search in ghb. TODO: Remove?
+  //int16_t prev = ghb_get_prev_entry(addr);
 
   // Increment head pointer
   ait[ait_head].addr = addr;
@@ -72,6 +86,19 @@ int16_t ghb_get_prev_entry(Addr addr) {
   ait[ait_head].valid = true;
   ait_head = (ait_head + 1) % AIT_SIZE;
   return -1;
+  //return prev;
+
+  // TODO: Implement later
+  //int16_t hash = addr % AIT_SIZE;
+  //ait_entry* bucket = &ait[hash];
+  //int16_t b_addr = bucket->addr;
+  //int16_t entry = bucket->entry;
+  //bool valid = bucket->valid;
+  //bucket->addr = addr;
+  //bucket->entry = ghb_head;
+  //bucket->valid = true;
+  //if (valid && b_addr == addr) return entry;
+  //return -1;
 }
 
 
@@ -88,7 +115,7 @@ void ghb_add_entry(Addr addr) {
   }
 
   // Find prev entry
-  int16_t prev = ghb_get_prev_entry(addr);
+  int16_t prev = ait_get_prev_ghb_entry(addr);
 
   // Handle pointer from previous to this
   if (prev != -1) {
@@ -126,9 +153,9 @@ void prefetch_access(AccessStat stat) {
     //printf("prev: %d\n", prev);
     while (prev != -1) {
       Addr addr = ghb[(prev + 1) % GHB_SIZE].addr;
-      //if (!in_cache(addr) && !in_mshr_queue(addr)) {
-      issue_prefetch(addr);
-      //}
+      if (!in_cache(addr) && !in_mshr_queue(addr)) {
+        issue_prefetch(addr);
+      }
       prev = ghb[prev].prev;
     }
   }
