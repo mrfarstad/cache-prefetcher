@@ -14,7 +14,7 @@
  * */
 
 #define GHB_SIZE 8192
-#define AIT_SIZE 4096
+#define AIT_SIZE 8192
 
 
 void ghb_add_entry(Addr addr);
@@ -92,7 +92,7 @@ void ghb_add_entry(Addr addr) {
 
   // Handle pointer from previous to this
   if (prev != -1) {
-    ghb[prev].next = ghb_head;   
+    ghb[prev].next = ghb_head;
   }
 
   entry->prev = prev;
