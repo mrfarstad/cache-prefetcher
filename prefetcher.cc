@@ -13,9 +13,10 @@
  * PREFETCHER
  * */
 
-#define GHB_SIZE 512
+#define GHB_SIZE 1024
 #define AIT_SIZE 512
 #define DEPTH 3
+#define WIDTH 3
 
 
 void ghb_add_entry(Addr addr);
@@ -46,23 +47,23 @@ void prefetch_init(void) {
   ghb = (ghb_entry *) malloc(sizeof(ghb_entry) * GHB_SIZE);
   for (int16_t i = 0; i < GHB_SIZE; i++) {
     ghb[i].valid = false;
+    ghb[i].prev = -1;
+    ghb[i].next = -1;
   }
   ait = (ait_entry *) malloc(sizeof(ait_entry) * AIT_SIZE);
-  for (int16_t i = 0; i < AIT_SIZE; i++) {
-    ait[i].valid = false;
-  }
+  for (int16_t i = 0; i < AIT_SIZE; i++) ait[i].valid = false;
 }
 
-int16_t ghb_get_prev_entry(Addr addr) {
-  int16_t prev = -1;
-  int16_t index = (ghb_head + 1) % GHB_SIZE;
-  while (index != ghb_head) {
-    if (!ghb[index].valid) return -1;
-    else if (ghb[index].addr == addr) return index;
-    index = (index + 1) % GHB_SIZE;
-  }
-  return prev;
-}
+//int16_t ghb_get_prev_entry(Addr addr) {
+//  int16_t prev = -1;
+//  int16_t index = (ghb_head + 1) % GHB_SIZE;
+//  while (index != ghb_head) {
+//    if (!ghb[index].valid) return -1;
+//    else if (ghb[index].addr == addr) return index;
+//    index = (index + 1) % GHB_SIZE;
+//  }
+//  return prev;
+//}
 
 int16_t ait_get_prev_ghb_entry(Addr delta, bool sign) {
   // TODO: Implement hash function
@@ -91,17 +92,19 @@ int16_t ait_get_prev_ghb_entry(Addr delta, bool sign) {
   //return prev;
 
   // TODO: Implement later
-  int16_t hash = (delta + MAX_PHYS_MEM_ADDR) % AIT_SIZE;
+  int16_t hash = delta % AIT_SIZE;
   ait_entry* bucket = &ait[hash];
   int16_t b_delta = bucket->delta;
-  int16_t entry = bucket->entry;
-  bool valid = bucket->valid;
+  int16_t b_entry = bucket->entry;
+  bool b_valid = bucket->valid;
   bool b_sign = bucket->sign;
   bucket->delta = delta;
   bucket->sign = sign;
   bucket->entry = ghb_head;
   bucket->valid = true;
-  if (valid && b_delta == delta && b_sign == sign) return entry;
+  // Not ait init && not overwritten ghb entry && equal deltas and signes
+  if (b_valid && ghb[b_entry].valid && b_delta == delta && b_sign == sign)
+    return b_entry;
   return -1;
 }
 
@@ -114,9 +117,8 @@ void ghb_add_entry(Addr addr) {
   // Handle existing entry
   if (entry->valid) {
     entry->valid = false;
-    if (entry->next != -1) {
+    if (entry->next != -1)
       ghb[entry->next].prev = -1;
-    }
   }
 
   // Find prev entry
@@ -138,14 +140,14 @@ void ghb_add_entry(Addr addr) {
     prev = -1;
   }
 
-  // Handle pointer from previous to this
-  if (prev != -1) {
+  //// Handle pointer from previous to this
+  if (prev != -1)
     ghb[prev].next = ghb_head;
-  }
 
   entry->prev = prev;
   entry->addr = addr;
   entry->valid = true;
+  entry->next = -1;
 }
 
 void prefetch_access(AccessStat stat) {
@@ -173,11 +175,12 @@ void prefetch_access(AccessStat stat) {
     int16_t prev = ghb[ghb_head].prev;
     //printf("prev: %d\n", prev);
     int16_t depth = 0;
+    int16_t width = 0;
     Addr prev_addr;
     Addr cand_addr;
     Addr delta;
     bool sign;
-    while (prev != -1 && depth < DEPTH) {
+    while (prev != -1 && depth < DEPTH && width < WIDTH) {
       prev_addr = ghb[prev].addr;
       cand_addr = ghb[(prev + 1) % GHB_SIZE].addr;
       if (prev_addr > cand_addr) {
@@ -188,12 +191,16 @@ void prefetch_access(AccessStat stat) {
         sign = 1;
       }
       prev = ghb[prev].prev;
-      depth++;
-      if (sign && addr + delta < MAX_PHYS_MEM_ADDR) addr += delta;
-      else if (!sign && addr > delta) addr -= delta;
+      width++;
+      if (sign && addr + delta < MAX_PHYS_MEM_ADDR)
+        addr += delta;
+      else if (!sign && addr > delta)
+        addr -= delta;
+      // If delta causes underflow or overflow, do not prefetch
       else continue;
       if (!in_cache(addr) && !in_mshr_queue(addr)) {
         issue_prefetch(addr);
+        depth++;
       }
     }
   }
@@ -203,3 +210,4 @@ void prefetch_access(AccessStat stat) {
 void prefetch_complete(Addr addr) {
   set_prefetch_bit(addr);
 }
+
