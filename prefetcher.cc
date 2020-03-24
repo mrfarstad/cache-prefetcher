@@ -15,8 +15,9 @@
 
 #define GHB_SIZE 1024
 #define AIT_SIZE 512
-#define DEPTH 3
+#define DEPTH 1
 #define WIDTH 3
+#define DEGREE 3
 #define STRIDED 4
 
 
@@ -38,20 +39,18 @@ struct ait_entry {
   int16_t entry;
 };
 
-ghb_entry* ghb = NULL;
+ghb_entry ghb[GHB_SIZE];
 int16_t ghb_head = -1;
 
-ait_entry* ait = NULL;
+ait_entry ait[AIT_SIZE];
 int16_t ait_head = 0;
 
 void prefetch_init(void) {
-  ghb = (ghb_entry *) malloc(sizeof(ghb_entry) * GHB_SIZE);
   for (int16_t i = 0; i < GHB_SIZE; i++) {
     ghb[i].valid = false;
     ghb[i].prev = -1;
     ghb[i].next = -1;
   }
-  ait = (ait_entry *) malloc(sizeof(ait_entry) * AIT_SIZE);
   for (int16_t i = 0; i < AIT_SIZE; i++) ait[i].valid = false;
 }
 
@@ -128,42 +127,48 @@ void prefetch_access(AccessStat stat) {
      return;
     }
     int16_t prev = ghb[ghb_head].prev;
-    Addr tmp_addr = addr + BLOCK_SIZE;
-    if (prev == -1) {
-      uint8_t strided = 0;
-      while (strided++ < STRIDED) {
-        if (!in_cache(tmp_addr) && !in_mshr_queue(tmp_addr))
-          issue_prefetch(tmp_addr);
-        tmp_addr += BLOCK_SIZE;
-      }
-    }
+    //Addr tmp_addr = addr + BLOCK_SIZE;
+    //if (prev == -1) {
+    //  uint8_t strided = 0;
+    //  while (strided++ < STRIDED) {
+    //    if (!in_cache(tmp_addr) && !in_mshr_queue(tmp_addr))
+    //      issue_prefetch(tmp_addr);
+    //    tmp_addr += BLOCK_SIZE;
+    //  }
+    //}
     uint8_t depth = 0;
     uint8_t width = 0;
+    uint8_t degree = 0;
     Addr prev_addr;
     Addr cand_addr;
     Addr delta;
     bool sign;
-    while (prev != -1 && depth < DEPTH && width++ < WIDTH) {
+    int16_t cand;
+    while (prev != -1 && width++ < WIDTH && degree < DEGREE) {
+      cand = (prev + 1) % GHB_SIZE;
       prev_addr = ghb[prev].addr;
-      cand_addr = ghb[(prev + 1) % GHB_SIZE].addr;
-      if (prev_addr > cand_addr) {
-        delta = prev_addr - cand_addr;
-        sign = 0;
-      } else {
-        delta = cand_addr - prev_addr;
-        sign = 1;
-      }
+      while (depth++ < DEPTH && cand != ghb_head && degree < DEGREE) {
+        cand_addr = ghb[cand].addr;
+        if (prev_addr > cand_addr) {
+          delta = prev_addr - cand_addr;
+          sign = 0;
+        } else {
+          delta = cand_addr - prev_addr;
+          sign = 1;
+        }
+        if (sign && addr + delta < MAX_PHYS_MEM_ADDR)
+          addr += delta;
+        else if (!sign && addr > delta)
+          addr -= delta;
+        // If delta causes underflow or overflow, do not prefetch
+        else continue;
+        if (!in_cache(addr) && !in_mshr_queue(addr)) {
+          issue_prefetch(addr);
+          degree++;
+        }
+        cand = (cand + 1) % GHB_SIZE;
+        }
       prev = ghb[prev].prev;
-      if (sign && addr + delta < MAX_PHYS_MEM_ADDR)
-        addr += delta;
-      else if (!sign && addr > delta)
-        addr -= delta;
-      // If delta causes underflow or overflow, do not prefetch
-      else continue;
-      if (!in_cache(addr) && !in_mshr_queue(addr)) {
-        issue_prefetch(addr);
-        depth++;
-      }
     }
   }
 }
@@ -172,5 +177,3 @@ void prefetch_access(AccessStat stat) {
 void prefetch_complete(Addr addr) {
   set_prefetch_bit(addr);
 }
-
-
