@@ -14,10 +14,9 @@
  * */
 
 #define GHB_SIZE 1024
-#define AIT_SIZE 512
-#define DEPTH 3
-#define WIDTH 3
-#define STRIDED 4
+#define AIT_SIZE 1024
+#define DEGREE 3
+#define WIDTH  3
 
 
 void ghb_add_entry(Addr addr);
@@ -28,7 +27,6 @@ struct ghb_entry {
   Addr addr;
   bool valid;
   int16_t prev;
-  int16_t next;
 };
 
 struct ait_entry {
@@ -42,21 +40,19 @@ ghb_entry ghb[GHB_SIZE];
 int16_t ghb_head = -1;
 
 ait_entry ait[AIT_SIZE];
-int16_t ait_head = 0;
 
 void prefetch_init(void) {
-  for (int16_t i = 0; i < GHB_SIZE; i++) {
+  for (uint16_t i = 0; i < GHB_SIZE; i++) {
     ghb[i].valid = false;
     ghb[i].prev = -1;
-    ghb[i].next = -1;
   }
-  for (int16_t i = 0; i < AIT_SIZE; i++) ait[i].valid = false;
+  for (uint16_t i = 0; i < AIT_SIZE; i++) ait[i].valid = false;
 }
 
 int16_t ait_get_prev_ghb_entry(Addr delta, bool sign) {
-  int16_t hash = delta % AIT_SIZE;
+  uint16_t hash = delta % AIT_SIZE;
   ait_entry* bucket = &ait[hash];
-  int16_t b_delta = bucket->delta;
+  Addr b_delta = bucket->delta;
   int16_t b_entry = bucket->entry;
   bool b_valid = bucket->valid;
   bool b_sign = bucket->sign;
@@ -76,12 +72,7 @@ void ghb_add_entry(Addr addr) {
   ghb_head = (ghb_head + 1) % GHB_SIZE;
 
   ghb_entry* entry = &ghb[ghb_head];
-  // Handle existing entry
-  if (entry->valid) {
-    entry->valid = false;
-    if (entry->next != -1)
-      ghb[entry->next].prev = -1;
-  }
+  entry->valid = false;
 
   // Find prev entry
   int16_t prev;
@@ -97,19 +88,13 @@ void ghb_add_entry(Addr addr) {
       sign = 1;
     }
     prev = ait_get_prev_ghb_entry(delta, sign);
-    if (prev == ghb_head) fprintf(stderr, "error: prev == ghb_head");
   } else {
     prev = -1;
   }
 
-  //// Handle pointer from previous to this
-  if (prev != -1)
-    ghb[prev].next = ghb_head;
-
   entry->prev = prev;
   entry->addr = addr;
   entry->valid = true;
-  entry->next = -1;
 }
 
 void prefetch_access(AccessStat stat) {
@@ -118,32 +103,29 @@ void prefetch_access(AccessStat stat) {
    * prefetch candidates up to the prefetch depth
    * */
   Addr addr = stat.mem_addr;
-  bool prefetched = get_prefetch_bit(addr);
-  if (stat.miss || prefetched) {
+  if (stat.miss) {
     ghb_add_entry(addr);
-    if (prefetched) {
-     clear_prefetch_bit(addr);
-     return;
-    }
     int16_t prev = ghb[ghb_head].prev;
-    Addr tmp_addr = addr + BLOCK_SIZE;
     if (prev == -1) {
+      Addr tmp_addr = addr;
       uint8_t strided = 0;
-      while (strided++ < STRIDED) {
-        if (!in_cache(tmp_addr) && !in_mshr_queue(tmp_addr))
-          issue_prefetch(tmp_addr);
+      while (strided++ < DEGREE) {
         tmp_addr += BLOCK_SIZE;
+        if (!in_cache(tmp_addr))
+          issue_prefetch(tmp_addr);
       }
+      return;
     }
-    uint8_t depth = 0;
+    uint8_t degree = 0;
     uint8_t width = 0;
     Addr prev_addr;
     Addr cand_addr;
     Addr delta;
     bool sign;
-    while (prev != -1 && depth < DEPTH && width++ < WIDTH) {
+    while (prev != -1 && width++ < WIDTH) {
       prev_addr = ghb[prev].addr;
       cand_addr = ghb[(prev + 1) % GHB_SIZE].addr;
+      prev = ghb[prev].prev;
       if (prev_addr > cand_addr) {
         delta = prev_addr - cand_addr;
         sign = 0;
@@ -151,16 +133,15 @@ void prefetch_access(AccessStat stat) {
         delta = cand_addr - prev_addr;
         sign = 1;
       }
-      prev = ghb[prev].prev;
       if (sign && addr + delta < MAX_PHYS_MEM_ADDR)
         addr += delta;
       else if (!sign && addr > delta)
         addr -= delta;
       // If delta causes underflow or overflow, do not prefetch
       else continue;
-      if (!in_cache(addr) && !in_mshr_queue(addr)) {
+      if (!in_cache(addr)) {
         issue_prefetch(addr);
-        depth++;
+        if (++degree == DEGREE) break;
       }
     }
   }
@@ -168,5 +149,5 @@ void prefetch_access(AccessStat stat) {
 
 
 void prefetch_complete(Addr addr) {
-  set_prefetch_bit(addr);
 }
+
