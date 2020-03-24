@@ -15,9 +15,8 @@
 
 #define GHB_SIZE 1024
 #define AIT_SIZE 512
-#define DEPTH 1
+#define DEPTH 3
 #define WIDTH 3
-#define DEGREE 3
 #define STRIDED 4
 
 
@@ -127,48 +126,42 @@ void prefetch_access(AccessStat stat) {
      return;
     }
     int16_t prev = ghb[ghb_head].prev;
-    //Addr tmp_addr = addr + BLOCK_SIZE;
-    //if (prev == -1) {
-    //  uint8_t strided = 0;
-    //  while (strided++ < STRIDED) {
-    //    if (!in_cache(tmp_addr) && !in_mshr_queue(tmp_addr))
-    //      issue_prefetch(tmp_addr);
-    //    tmp_addr += BLOCK_SIZE;
-    //  }
-    //}
+    Addr tmp_addr = addr + BLOCK_SIZE;
+    if (prev == -1) {
+      uint8_t strided = 0;
+      while (strided++ < STRIDED) {
+        if (!in_cache(tmp_addr) && !in_mshr_queue(tmp_addr))
+          issue_prefetch(tmp_addr);
+        tmp_addr += BLOCK_SIZE;
+      }
+    }
     uint8_t depth = 0;
     uint8_t width = 0;
-    uint8_t degree = 0;
     Addr prev_addr;
     Addr cand_addr;
     Addr delta;
     bool sign;
-    int16_t cand;
-    while (prev != -1 && width++ < WIDTH && degree < DEGREE) {
-      cand = (prev + 1) % GHB_SIZE;
+    while (prev != -1 && depth < DEPTH && width++ < WIDTH) {
       prev_addr = ghb[prev].addr;
-      while (depth++ < DEPTH && cand != ghb_head && degree < DEGREE) {
-        cand_addr = ghb[cand].addr;
-        if (prev_addr > cand_addr) {
-          delta = prev_addr - cand_addr;
-          sign = 0;
-        } else {
-          delta = cand_addr - prev_addr;
-          sign = 1;
-        }
-        if (sign && addr + delta < MAX_PHYS_MEM_ADDR)
-          addr += delta;
-        else if (!sign && addr > delta)
-          addr -= delta;
-        // If delta causes underflow or overflow, do not prefetch
-        else continue;
-        if (!in_cache(addr) && !in_mshr_queue(addr)) {
-          issue_prefetch(addr);
-          degree++;
-        }
-        cand = (cand + 1) % GHB_SIZE;
-        }
+      cand_addr = ghb[(prev + 1) % GHB_SIZE].addr;
+      if (prev_addr > cand_addr) {
+        delta = prev_addr - cand_addr;
+        sign = 0;
+      } else {
+        delta = cand_addr - prev_addr;
+        sign = 1;
+      }
       prev = ghb[prev].prev;
+      if (sign && addr + delta < MAX_PHYS_MEM_ADDR)
+        addr += delta;
+      else if (!sign && addr > delta)
+        addr -= delta;
+      // If delta causes underflow or overflow, do not prefetch
+      else continue;
+      if (!in_cache(addr) && !in_mshr_queue(addr)) {
+        issue_prefetch(addr);
+        depth++;
+      }
     }
   }
 }
