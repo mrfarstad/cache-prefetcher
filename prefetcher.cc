@@ -13,10 +13,11 @@
  * PREFETCHER
  * */
 
-#define GHB_SIZE 1024
-#define AIT_SIZE 1024
+#define GHB_SIZE 32
+#define AIT_SIZE 32
+// Optimal when DEGREE = 3 and WIDTH = 3
 #define DEGREE 3
-#define WIDTH  3
+#define DEPTH 2
 
 
 void ghb_add_entry(Addr addr);
@@ -30,7 +31,7 @@ struct ghb_entry {
 };
 
 struct ait_entry {
-  Addr delta;
+  int16_t delta;
   bool sign;
   bool valid;
   int16_t entry;
@@ -52,7 +53,7 @@ void prefetch_init(void) {
 int16_t ait_get_prev_ghb_entry(Addr delta, bool sign) {
   uint16_t hash = delta % AIT_SIZE;
   ait_entry* bucket = &ait[hash];
-  Addr b_delta = bucket->delta;
+  int16_t b_delta = bucket->delta;
   int16_t b_entry = bucket->entry;
   bool b_valid = bucket->valid;
   bool b_sign = bucket->sign;
@@ -116,16 +117,16 @@ void prefetch_access(AccessStat stat) {
       }
       return;
     }
-    uint8_t degree = 0;
-    uint8_t width = 0;
+    int8_t depth = 0;
     Addr prev_addr;
     Addr cand_addr;
     Addr delta;
     bool sign;
-    while (prev != -1 && width++ < WIDTH) {
-      prev_addr = ghb[prev].addr;
-      cand_addr = ghb[(prev + 1) % GHB_SIZE].addr;
-      prev = ghb[prev].prev;
+    prev_addr = ghb[prev].addr;
+    int16_t cand = (prev + 1) % GHB_SIZE;
+    while (cand != ghb_head && depth++ < DEPTH) {
+      cand_addr = ghb[cand].addr;
+      cand = (cand + 1) % GHB_SIZE;
       if (prev_addr > cand_addr) {
         delta = prev_addr - cand_addr;
         sign = 0;
@@ -141,7 +142,6 @@ void prefetch_access(AccessStat stat) {
       else continue;
       if (!in_cache(addr)) {
         issue_prefetch(addr);
-        if (++degree == DEGREE) break;
       }
     }
   }
