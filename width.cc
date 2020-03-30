@@ -1,13 +1,6 @@
-/*
- * A sample prefetcher which does sequential one-block lookahead.
- * This means that the prefetcher fetches the next block _after_ the one that
- * was just accessed. It also ignores requests to blocks already in the cache.
- */
-
 #include "interface.hh"
 #include "stdlib.h"
 #include "stdio.h"
-#include <queue>
 
 /*
  * PREFETCHER

@@ -1,7 +1,6 @@
 #include "interface.hh"
 #include "stdlib.h"
 #include "stdio.h"
-#include <queue>
 
 /*
  * PREFETCHER

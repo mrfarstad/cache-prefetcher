@@ -1,20 +1,13 @@
-/*
- * A sample prefetcher which does sequential one-block lookahead.
- * This means that the prefetcher fetches the next block _after_ the one that
- * was just accessed. It also ignores requests to blocks already in the cache.
- */
-
 #include "interface.hh"
 #include "stdlib.h"
 #include "stdio.h"
-#include <queue>
 
 /*
  * PREFETCHER
  * */
 
-#define GHB_SIZE 32
-#define AIT_SIZE 32
+#define GHB_SIZE 1024
+#define AIT_SIZE 1024
 #define DEGREE 3
 #define WIDTH 3
 #define DEPTH 2
@@ -144,9 +137,8 @@ void prefetch_access(AccessStat stat) {
           addr -= delta;
         // If delta causes underflow or overflow, do not prefetch
         else continue;
-        if (!in_cache(addr)) {
+        if (!in_cache(addr))
           issue_prefetch(addr);
-        }
       }
     }
   }
