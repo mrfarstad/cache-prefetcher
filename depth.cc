@@ -1,13 +1,6 @@
-/*
- * A sample prefetcher which does sequential one-block lookahead.
- * This means that the prefetcher fetches the next block _after_ the one that
- * was just accessed. It also ignores requests to blocks already in the cache.
- */
-
 #include "interface.hh"
 #include "stdlib.h"
 #include "stdio.h"
-#include <queue>
 
 /*
  * PREFETCHER
@@ -16,7 +9,7 @@
 #define GHB_SIZE 1024
 #define AIT_SIZE 1024
 #define DEGREE 3
-#define WIDTH  3
+#define DEPTH 2
 
 
 void ghb_add_entry(Addr addr);
@@ -30,7 +23,7 @@ struct ghb_entry {
 };
 
 struct ait_entry {
-  Addr delta;
+  int16_t delta;
   bool sign;
   bool valid;
   int16_t entry;
@@ -52,7 +45,7 @@ void prefetch_init(void) {
 int16_t ait_get_prev_ghb_entry(Addr delta, bool sign) {
   uint16_t hash = delta % AIT_SIZE;
   ait_entry* bucket = &ait[hash];
-  Addr b_delta = bucket->delta;
+  int16_t b_delta = bucket->delta;
   int16_t b_entry = bucket->entry;
   bool b_valid = bucket->valid;
   bool b_sign = bucket->sign;
@@ -116,16 +109,16 @@ void prefetch_access(AccessStat stat) {
       }
       return;
     }
-    uint8_t degree = 0;
-    uint8_t width = 0;
+    int8_t depth = 0;
     Addr prev_addr;
     Addr cand_addr;
     Addr delta;
     bool sign;
-    while (prev != -1 && width++ < WIDTH) {
-      prev_addr = ghb[prev].addr;
-      cand_addr = ghb[(prev + 1) % GHB_SIZE].addr;
-      prev = ghb[prev].prev;
+    prev_addr = ghb[prev].addr;
+    int16_t cand = (prev + 1) % GHB_SIZE;
+    while (cand != ghb_head && depth++ < DEPTH) {
+      cand_addr = ghb[cand].addr;
+      cand = (cand + 1) % GHB_SIZE;
       if (prev_addr > cand_addr) {
         delta = prev_addr - cand_addr;
         sign = 0;
@@ -139,10 +132,8 @@ void prefetch_access(AccessStat stat) {
         addr -= delta;
       // If delta causes underflow or overflow, do not prefetch
       else continue;
-      if (!in_cache(addr)) {
+      if (!in_cache(addr))
         issue_prefetch(addr);
-        if (++degree == DEGREE) break;
-      }
     }
   }
 }
@@ -150,4 +141,3 @@ void prefetch_access(AccessStat stat) {
 
 void prefetch_complete(Addr addr) {
 }
-
