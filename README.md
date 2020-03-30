@@ -1,2 +1,2 @@
 # cache-prefetcher
-Cache prefetching assignment for TDT4260 Computer Architecture
+A cache prefetching assignment for TDT4260 Computer Architecture. The [provided pdf](paper.pdf) explains the purpose and the results of implementing a Distance prefetcher (G/DC) using the M5 hardware simulator.
