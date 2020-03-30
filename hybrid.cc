@@ -3,7 +3,7 @@
 #include "stdio.h"
 
 /*
- * PREFETCHER
+ * DISTANCE PREFETCHER: Hybrid version
  * */
 
 #define GHB_SIZE 1024
@@ -54,7 +54,6 @@ int16_t ait_get_prev_ghb_entry(Addr delta, bool sign) {
   bucket->sign = sign;
   bucket->entry = ghb_head;
   bucket->valid = true;
-  // Not ait init && not overwritten ghb entry && equal deltas and signes
   if (b_valid && ghb[b_entry].valid && b_delta == delta && b_sign == sign)
     return b_entry;
   return -1;
