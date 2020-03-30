@@ -16,7 +16,7 @@ change = [
     "seq_on_miss",
     "seq_on_access",
     "adaptive_seq",
-    "G/DC",
+    "G/DC (width)",
     "RPT",
     "DCPT-P",
     "DCPT",

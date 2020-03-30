@@ -25,13 +25,11 @@ def harmonic_mean(speedups):
 
 
 main_path = "last_stats/"
-paths = ["width", "hybrid"]
+paths = ["width", "hybrid", "depth"]
 sizes = [32, 64, 128, 256, 512, 1024, 2048, 4096]
 
 best = 0
 best_mean = 0
-
-means = []
 
 fig1, ax1 = plt.subplots()
 ax1.set_xscale('log', basex=2)
@@ -41,6 +39,7 @@ ax1.set_xlabel('Size of index table and GHB')
 ax1.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
 
 for path in paths:
+    means = []
     for size in sizes:
         with open(main_path + path + "/size_" + str(size) + "/stats.txt",
                   "r") as file:
@@ -66,7 +65,8 @@ for path in paths:
             if mean > best_mean:
                 best_size = size
                 best_mean = mean
-    ax1.plot(sizes, means)
+    ax1.plot(sizes, means, label=path)
+    ax1.legend()
 
 # plt.xticks(sizes)
 # plt.xscale("log", basex=2)
@@ -74,5 +74,5 @@ for path in paths:
 # plt.axes.Axes.set_xticks(sizes)
 # matplotlib.axes.Axes.set_xscale('log')
 # plt.plot(sizes, means)
-plt.savefig("hybrid")
+plt.savefig("result")
 plt.show()
