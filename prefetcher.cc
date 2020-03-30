@@ -15,8 +15,8 @@
 
 #define GHB_SIZE 32
 #define AIT_SIZE 32
-// Optimal when DEGREE = 3 and WIDTH = 3
 #define DEGREE 3
+#define WIDTH 3
 #define DEPTH 2
 
 
@@ -31,7 +31,7 @@ struct ghb_entry {
 };
 
 struct ait_entry {
-  int16_t delta;
+  Addr delta;
   bool sign;
   bool valid;
   int16_t entry;
@@ -53,7 +53,7 @@ void prefetch_init(void) {
 int16_t ait_get_prev_ghb_entry(Addr delta, bool sign) {
   uint16_t hash = delta % AIT_SIZE;
   ait_entry* bucket = &ait[hash];
-  int16_t b_delta = bucket->delta;
+  uint16_t b_delta = bucket->delta;
   int16_t b_entry = bucket->entry;
   bool b_valid = bucket->valid;
   bool b_sign = bucket->sign;
@@ -117,31 +117,36 @@ void prefetch_access(AccessStat stat) {
       }
       return;
     }
-    int8_t depth = 0;
+    uint8_t width = 0;
+    uint8_t depth = 0;
     Addr prev_addr;
     Addr cand_addr;
     Addr delta;
     bool sign;
-    prev_addr = ghb[prev].addr;
-    int16_t cand = (prev + 1) % GHB_SIZE;
-    while (cand != ghb_head && depth++ < DEPTH) {
-      cand_addr = ghb[cand].addr;
-      cand = (cand + 1) % GHB_SIZE;
-      if (prev_addr > cand_addr) {
-        delta = prev_addr - cand_addr;
-        sign = 0;
-      } else {
-        delta = cand_addr - prev_addr;
-        sign = 1;
-      }
-      if (sign && addr + delta < MAX_PHYS_MEM_ADDR)
-        addr += delta;
-      else if (!sign && addr > delta)
-        addr -= delta;
-      // If delta causes underflow or overflow, do not prefetch
-      else continue;
-      if (!in_cache(addr)) {
-        issue_prefetch(addr);
+    int16_t cand;
+    while (prev != -1 && width++ < WIDTH) {
+      prev_addr = ghb[prev].addr;
+      cand = (prev + 1) % GHB_SIZE;
+      while (cand != ghb_head && depth++ < DEPTH) {
+        cand_addr = ghb[cand].addr;
+        cand = (cand + 1) % GHB_SIZE;
+        prev = ghb[prev].prev;
+        if (prev_addr > cand_addr) {
+          delta = prev_addr - cand_addr;
+          sign = 0;
+        } else {
+          delta = cand_addr - prev_addr;
+          sign = 1;
+        }
+        if (sign && addr + delta < MAX_PHYS_MEM_ADDR)
+          addr += delta;
+        else if (!sign && addr > delta)
+          addr -= delta;
+        // If delta causes underflow or overflow, do not prefetch
+        else continue;
+        if (!in_cache(addr)) {
+          issue_prefetch(addr);
+        }
       }
     }
   }
@@ -150,4 +155,5 @@ void prefetch_access(AccessStat stat) {
 
 void prefetch_complete(Addr addr) {
 }
+
 
